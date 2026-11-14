@@ -32,7 +32,7 @@ class ZeroSumConv2d(nn.Conv2d):
 
     def forward(self, x):
         return self._conv_forward(x, self.centred_weight(), None)
-VARIANTS = {'standard': dict(bias=True, zero_sum_first=False)}
+VARIANTS = {'standard': dict(bias=True, zero_sum_first=False), 'seqsi': dict(bias=False, zero_sum_first=True)}
 
 class SmallCNN(nn.Module):
 
