@@ -181,6 +181,18 @@ def predict_logits(model, x_uint8, transform=None, bs=1000):
 def accuracy(model, x, y, transform=None):
     return (predict_logits(model, x, transform).argmax(1) == y).float().mean().item()
 
+def metrics_from_logits(z, y, t_raw=1.0, t_norm=1.0):
+    p = z.softmax(1)
+    return dict(acc=(z.argmax(1) == y).float().mean().item(), conf=p.max(1).values.mean().item())
+
+def shift_sweep(model, x, y, kind, values, clip, t_raw=1.0, t_norm=1.0):
+    fn = brightness if kind == 'brightness' else contrast
+    rows = []
+    for v in values:
+        z = predict_logits(model, x, lambda t, v=v: fn(t, v, clip))
+        rows.append(dict(kind=kind, value=float(v), clip=bool(clip), **metrics_from_logits(z, y, t_raw, t_norm)))
+    return rows
+
 @torch.no_grad()
 def invariance_check(model, x_uint8, n=1000, seed=0, use_double=True):
     m = copy.deepcopy(model).eval()
