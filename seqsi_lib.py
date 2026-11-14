@@ -21,7 +21,49 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+VARIANTS = {'standard': dict(bias=True, zero_sum_first=False)}
 
+class SmallCNN(nn.Module):
+
+    def __init__(self, in_ch=3, n_classes=10, widths=(64, 128, 256), convs_per_stage=2, bias=True, zero_sum_first=False):
+        super().__init__()
+        layers, c, first = ([], in_ch, True)
+        for w in widths:
+            for _ in range(convs_per_stage):
+                if first and zero_sum_first:
+                    conv = ZeroSumConv2d(c, w)
+                else:
+                    conv = nn.Conv2d(c, w, 3, padding=1, bias=bias)
+                first = False
+                layers.append(conv)
+                layers.append(nn.ReLU(inplace=True))
+                c = w
+            layers.append(nn.MaxPool2d(2))
+        self.features = nn.Sequential(*layers)
+        self.head = nn.Linear(c, n_classes, bias=bias)
+        self.apply(_init_weights)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.mean(dim=(2, 3))
+        return self.head(x)
+
+def _init_weights(m):
+    if isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.Linear):
+        nn.init.normal_(m.weight, 0.0, 0.01)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+
+def build_model(variant, in_ch, n_classes=10, convs_per_stage=2):
+    net = SmallCNN(in_ch=in_ch, n_classes=n_classes, convs_per_stage=convs_per_stage, **VARIANTS[variant])
+    return net
+
+def count_params(model):
+    return sum((p.numel() for p in model.parameters()))
 DATASETS = {'cifar10': dict(in_ch=3, flip=True, pad=4)}
 
 def load_data(name, root='./data', device='cpu', n_val=5000, split_seed=0):
