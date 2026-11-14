@@ -155,6 +155,17 @@ def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, se
         if log is not None and (ep == 0 or (ep + 1) % 5 == 0 or ep + 1 == epochs):
             log(f"  epoch {ep + 1:3d}/{epochs}  loss {row['train_loss']:.4f}  train {row['train_acc']:.4f}  val {val_acc:.4f}  ({row['time_s']:.0f}s)")
     return hist
+B_VALUES = [-0.8, -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8]
+A_VALUES = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
+def brightness(x, b, clip):
+    y = x + b
+    return y.clamp(0, 1) if clip else y
+
+def contrast(x, a, clip):
+    m = x.mean(dim=(1, 2, 3), keepdim=True)
+    y = a * (x - m) + m
+    return y.clamp(0, 1) if clip else y
 
 @torch.no_grad()
 def predict_logits(model, x_uint8, transform=None, bs=1000):
