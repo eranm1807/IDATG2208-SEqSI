@@ -226,3 +226,10 @@ def evaluate_model(model, data, cifar10c_dir=None, log=print):
         rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip)
     res['affine'] = rows
     return res
+
+def save_json(obj, path):
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(obj, f, indent=1)
+    os.replace(tmp, path)
