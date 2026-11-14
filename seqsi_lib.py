@@ -212,3 +212,17 @@ def invariance_check(model, x_uint8, n=1000, seed=0, use_double=True):
     rel_inv = (f1 - f0).norm(dim=1) / f0.norm(dim=1).clamp_min(1e-30)
     agree = (f1.argmax(1) == f0.argmax(1)).float().mean().item()
     return dict(n=n, max_rel_err=rel_eq.max().item(), median_rel_err=rel_eq.median().item(), max_rel_err_inv=rel_inv.max().item(), prediction_agreement=agree)
+
+def evaluate_model(model, data, cifar10c_dir=None, log=print):
+    dataset = data['name']
+    xv, yv = (data['x_val'], data['y_val'])
+    xt, yt = (data['x_test'], data['y_test'])
+    res = {}
+    res['clean'] = metrics_from_logits(predict_logits(model, xt), yt)
+    res['invariance'] = invariance_check(model, xt)
+    rows = []
+    for clip in (False, True):
+        rows += shift_sweep(model, xt, yt, 'brightness', B_VALUES, clip)
+        rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip)
+    res['affine'] = rows
+    return res
