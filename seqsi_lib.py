@@ -99,3 +99,73 @@ def to_float(x_uint8):
 
 def to_uint8(x_float):
     return (x_float.clamp(0, 1) * 255.0).round().to(torch.uint8)
+
+def gpu_augment(x, pad=4, flip=True):
+    n, c, h, w = x.shape
+    dev = x.device
+    xp = F.pad(x, (pad, pad, pad, pad), mode='reflect')
+    i = torch.randint(0, 2 * pad + 1, (n,), device=dev)
+    j = torch.randint(0, 2 * pad + 1, (n,), device=dev)
+    rows = (i[:, None] + torch.arange(h, device=dev))[:, None, :, None]
+    cols = (j[:, None] + torch.arange(w, device=dev))[:, None, None, :]
+    out = xp[torch.arange(n, device=dev)[:, None, None, None], torch.arange(c, device=dev)[None, :, None, None], rows, cols]
+    if flip:
+        m = torch.rand(n, device=dev) < 0.5
+        out = torch.where(m[:, None, None, None], out.flip(3), out)
+    return out
+
+def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, seed=0, device='cuda', amp=True, log=print):
+    set_seed(seed)
+    cfg = DATASETS[dataset]
+    model.to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    n = len(data['x_train'])
+    steps_per_epoch = math.ceil(n / bs)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=lr, total_steps=epochs * steps_per_epoch)
+    use_amp = amp and device == 'cuda'
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
+    g = torch.Generator().manual_seed(seed)
+    hist = []
+    t0 = time.time()
+    for ep in range(epochs):
+        model.train()
+        perm = torch.randperm(n, generator=g).to(data['x_train'].device)
+        tot_loss = torch.zeros((), device=device)
+        tot_correct = torch.zeros((), device=device)
+        for k in range(steps_per_epoch):
+            idx = perm[k * bs:(k + 1) * bs]
+            x = to_float(data['x_train'][idx])
+            y = data['y_train'][idx]
+            x = gpu_augment(x, pad=cfg['pad'], flip=cfg['flip'])
+            with torch.autocast('cuda', dtype=torch.float16, enabled=use_amp):
+                out = model(x)
+                loss = F.cross_entropy(out, y)
+            opt.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+            scaler.step(opt)
+            scaler.update()
+            sched.step()
+            tot_loss += loss.detach().float() * len(y)
+            tot_correct += (out.argmax(1) == y).sum()
+        val_acc = accuracy(model, data['x_val'], data['y_val'])
+        row = dict(epoch=ep + 1, train_loss=tot_loss.item() / n, train_acc=tot_correct.item() / n, val_acc=val_acc, time_s=time.time() - t0)
+        hist.append(row)
+        if log is not None and (ep == 0 or (ep + 1) % 5 == 0 or ep + 1 == epochs):
+            log(f"  epoch {ep + 1:3d}/{epochs}  loss {row['train_loss']:.4f}  train {row['train_acc']:.4f}  val {val_acc:.4f}  ({row['time_s']:.0f}s)")
+    return hist
+
+@torch.no_grad()
+def predict_logits(model, x_uint8, transform=None, bs=1000):
+    model.eval()
+    outs = []
+    for k in range(0, len(x_uint8), bs):
+        x = to_float(x_uint8[k:k + bs])
+        if transform is not None:
+            x = transform(x)
+        outs.append(model(x).float())
+    return torch.cat(outs)
+
+def accuracy(model, x, y, transform=None):
+    return (predict_logits(model, x, transform).argmax(1) == y).float().mean().item()
