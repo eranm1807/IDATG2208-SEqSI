@@ -21,6 +21,17 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+class ZeroSumConv2d(nn.Conv2d):
+
+    def __init__(self, in_ch, out_ch, k=3):
+        super().__init__(in_ch, out_ch, k, padding=k // 2, padding_mode='replicate', bias=False)
+
+    def centred_weight(self):
+        return self.weight - self.weight.mean(dim=(1, 2, 3), keepdim=True)
+
+    def forward(self, x):
+        return self._conv_forward(x, self.centred_weight(), None)
 VARIANTS = {'standard': dict(bias=True, zero_sum_first=False)}
 
 class SmallCNN(nn.Module):
