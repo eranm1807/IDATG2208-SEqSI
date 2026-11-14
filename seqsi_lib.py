@@ -180,3 +180,23 @@ def predict_logits(model, x_uint8, transform=None, bs=1000):
 
 def accuracy(model, x, y, transform=None):
     return (predict_logits(model, x, transform).argmax(1) == y).float().mean().item()
+
+@torch.no_grad()
+def invariance_check(model, x_uint8, n=1000, seed=0, use_double=True):
+    m = copy.deepcopy(model).eval()
+    dtype = torch.float64 if use_double else torch.float32
+    m = m.to(dtype)
+    g = torch.Generator().manual_seed(seed)
+    x = to_float(x_uint8[:n]).to(dtype)
+    a = torch.exp(torch.empty(n).uniform_(math.log(0.25), math.log(4), generator=g))
+    b = torch.empty(n).uniform_(-1, 1, generator=g)
+    a = a.to(x.device, dtype)[:, None, None, None]
+    b = b.to(x.device, dtype)[:, None, None, None]
+    f0 = torch.cat([m(x[k:k + 250]) for k in range(0, n, 250)])
+    f1 = torch.cat([m((a * x + b)[k:k + 250]) for k in range(0, n, 250)])
+    a_vec = a[:, 0, 0, 0, None]
+    t_eq = a_vec * f0
+    rel_eq = (f1 - t_eq).norm(dim=1) / t_eq.norm(dim=1).clamp_min(1e-30)
+    rel_inv = (f1 - f0).norm(dim=1) / f0.norm(dim=1).clamp_min(1e-30)
+    agree = (f1.argmax(1) == f0.argmax(1)).float().mean().item()
+    return dict(n=n, max_rel_err=rel_eq.max().item(), median_rel_err=rel_eq.median().item(), max_rel_err_inv=rel_inv.max().item(), prediction_agreement=agree)
