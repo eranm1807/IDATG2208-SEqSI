@@ -93,14 +93,26 @@ def fig_affine(AFF, dataset, models):
     _legend_below(fig, axes.ravel(), ncol=len(models))
     return fig
 
+def table_invariance(R):
+    main = R[R['family'] == 'main']
+    lines = ['\\begin{table}[t]', '\\centering', '\\small', '\\caption{Numerical invariance check on 1{,}000 test images with random $a\\in[0.25,4]$ and $b\\in[-1,1]$ (float64). Relative error of $f(a\\mathbf{x}+b)$ against $a f(\\mathbf{x})$ (largest over images and seeds) and fraction of unchanged predictions.}', '\\label{tab:invariance}', '\\begin{tabular}{llcc}', '\\toprule', 'Dataset & Model & Max.\\ rel.\\ error & Unchanged predictions \\\\', '\\midrule']
+    for ds in ['cifar10', 'fashionmnist']:
+        d = main[main['dataset'] == ds]
+        for m in _present(d, MODELS):
+            dm = d[d['model'] == m]
+            lines.append(f"{DS_NAME[ds]} & {m} & {dm['inv_err'].max():.1e} & {100 * dm['inv_agree'].min():.1f}\\,\\% \\\\")
+    lines += ['\\bottomrule', '\\end{tabular}', '\\end{table}']
+    return '\n'.join(lines)
+
 def make_all(run_dir='results/runs', out_dir='results', show=False):
     runs = load_runs(run_dir)
     if not runs:
-        print('Ingen kjøringer funnet i', run_dir)
+        print('No runs found in', run_dir)
         return None
     R, AFF = build_frames(runs)
-    fig_dir = os.path.join(out_dir, 'figures')
+    fig_dir, tab_dir = (os.path.join(out_dir, 'figures'), os.path.join(out_dir, 'tables'))
     os.makedirs(fig_dir, exist_ok=True)
+    os.makedirs(tab_dir, exist_ok=True)
     made = []
 
     def save(fig, name):
@@ -114,5 +126,11 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         plt.close(fig)
     for ds in sorted(R['dataset'].unique()):
         save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
-    print(f"Figurer: {', '.join(made)}")
+    tables = {'invariance': table_invariance(R)}
+    for k, v in tables.items():
+        if v:
+            with open(os.path.join(tab_dir, k + '.tex'), 'w') as f:
+                f.write(v + '\n')
+    print(f"Figures: {', '.join(made)}")
+    print(f"Tables: {', '.join((k for k, v in tables.items() if v))}")
     return R
