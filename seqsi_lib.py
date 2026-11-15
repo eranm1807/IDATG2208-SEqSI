@@ -75,7 +75,7 @@ def build_model(variant, in_ch, n_classes=10, convs_per_stage=2):
 
 def count_params(model):
     return sum((p.numel() for p in model.parameters()))
-DATASETS = {'cifar10': dict(in_ch=3, flip=True, pad=4)}
+DATASETS = {'cifar10': dict(in_ch=3, flip=True, pad=4), 'fashionmnist': dict(in_ch=1, flip=False, pad=2)}
 
 def load_data(name, root='./data', device='cpu', n_val=5000, split_seed=0):
     if name == 'cifar10':
@@ -84,6 +84,11 @@ def load_data(name, root='./data', device='cpu', n_val=5000, split_seed=0):
         x_tr = torch.tensor(tr.data).permute(0, 3, 1, 2).contiguous()
         x_te = torch.tensor(te.data).permute(0, 3, 1, 2).contiguous()
         y_tr, y_te = (torch.tensor(tr.targets), torch.tensor(te.targets))
+    elif name == 'fashionmnist':
+        tr = torchvision.datasets.FashionMNIST(root, train=True, download=True)
+        te = torchvision.datasets.FashionMNIST(root, train=False, download=True)
+        x_tr, x_te = (tr.data.unsqueeze(1), te.data.unsqueeze(1))
+        y_tr, y_te = (tr.targets.clone(), te.targets.clone())
     else:
         raise ValueError(name)
     g = torch.Generator().manual_seed(split_seed)
