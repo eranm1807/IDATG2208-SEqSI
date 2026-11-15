@@ -1,0 +1,118 @@
+import glob
+import json
+import os
+import numpy as np
+import pandas as pd
+import matplotlib
+if __name__ == '__main__':
+    matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+MODELS = ['Standard', 'SEqSI']
+STYLE = {'Standard': dict(color='#D55E00', marker='o'), 'SEqSI': dict(color='#0072B2', marker='s')}
+DS_NAME = {'cifar10': 'CIFAR-10'}
+plt.rcParams.update({'font.size': 8, 'axes.titlesize': 8, 'axes.labelsize': 8, 'legend.fontsize': 7, 'xtick.labelsize': 7, 'ytick.labelsize': 7, 'axes.spines.top': False, 'axes.spines.right': False, 'axes.grid': True, 'grid.color': '#e6e6e6', 'grid.linewidth': 0.6, 'lines.linewidth': 1.5, 'lines.markersize': 4, 'savefig.bbox': 'tight', 'savefig.pad_inches': 0.02})
+FULL_W = 5.5
+
+def label_of(cfg):
+    base = {'standard': 'Standard', 'seqsi': 'SEqSI'}[cfg['variant']]
+    return base
+
+def family_of(cfg):
+    if cfg['convs_per_stage'] != 2:
+        return f"depth{cfg['convs_per_stage']}"
+    if cfg['bn'] != 'none':
+        return f"bn-{cfg['bn']}"
+    return 'main'
+
+def load_runs(run_dir):
+    runs = []
+    for p in sorted(glob.glob(os.path.join(run_dir, '*.json'))):
+        with open(p) as f:
+            runs.append(json.load(f))
+    return runs
+
+def build_frames(runs):
+    R, AFF = ([], [])
+    for r in runs:
+        c = r['config']
+        key = dict(dataset=c['dataset'], model=label_of(c), family=family_of(c), seed=c['seed'], cps=c['convs_per_stage'], bn=c['bn'])
+        aff = pd.DataFrame(r['affine'])
+        pure, clipped = (aff[~aff['clip']], aff[aff['clip']])
+        inv = r['invariance']
+        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min())
+        R.append(row)
+        AFF.append(aff.assign(**key))
+    cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()
+    return (pd.DataFrame(R), cat(AFF))
+
+def curve(df, by, col='acc'):
+    rows = []
+    for v, g in df.groupby(by):
+        rows.append((v, g[col].mean(), np.nan, len(g)))
+    return pd.DataFrame(rows, columns=[by, 'mean', 'ci', 'n']).sort_values(by)
+
+def _line(ax, c, label, ls='-', band=True, style_of=None):
+    st = dict(STYLE.get(style_of or label, dict(color='black', marker='o')))
+    if style_of is not None:
+        st['markerfacecolor'] = 'white'
+    ax.plot(c.iloc[:, 0], c['mean'], ls=ls, label=label, **st)
+    if band and c['ci'].notna().any():
+        ax.fill_between(c.iloc[:, 0], c['mean'] - c['ci'], c['mean'] + c['ci'], color=st['color'], alpha=0.15, linewidth=0)
+
+def _present(df, models):
+    return [m for m in models if m in set(df['model'])]
+
+def _legend_below(fig, axes, ncol=4, bottom=0.08):
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc='lower center', ncol=ncol, frameon=False, bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout(rect=(0, bottom, 1, 1))
+
+def _contrast_axis(ax, values, narrow=False):
+    ax.set_xscale('log')
+    ticks = [v for v in values if v in (0.1, 0.25, 0.5, 1, 2, 4)] if narrow else values
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([f'{v:g}' for v in ticks])
+    ax.minorticks_off()
+
+def fig_affine(AFF, dataset, models):
+    d = AFF[(AFF['dataset'] == dataset) & (AFF['family'] == 'main')]
+    models = _present(d, models)
+    fig, axes = plt.subplots(2, 2, figsize=(FULL_W, 3.6), sharey=True)
+    for r, clip in enumerate([False, True]):
+        for cidx, kind in enumerate(['brightness', 'contrast']):
+            ax = axes[r, cidx]
+            sub = d[(d['clip'] == clip) & (d['kind'] == kind)]
+            for m in models:
+                _line(ax, curve(sub[sub['model'] == m], 'value'), m)
+            ax.set_ylim(0, 1)
+            if kind == 'contrast':
+                _contrast_axis(ax, sorted(sub['value'].unique()))
+            ax.set_title(f"{kind}, {('clipped to [0,1]' if clip else 'pure affine')}")
+            ax.set_xlabel('brightness shift $b$' if kind == 'brightness' else 'contrast factor $a$')
+        axes[r, 0].set_ylabel('test accuracy')
+    _legend_below(fig, axes.ravel(), ncol=len(models))
+    return fig
+
+def make_all(run_dir='results/runs', out_dir='results', show=False):
+    runs = load_runs(run_dir)
+    if not runs:
+        print('Ingen kjøringer funnet i', run_dir)
+        return None
+    R, AFF = build_frames(runs)
+    fig_dir = os.path.join(out_dir, 'figures')
+    os.makedirs(fig_dir, exist_ok=True)
+    made = []
+
+    def save(fig, name):
+        if fig is None:
+            return
+        fig.savefig(os.path.join(fig_dir, name + '.pdf'))
+        fig.savefig(os.path.join(fig_dir, name + '.png'), dpi=200)
+        made.append(name)
+        if show:
+            plt.show()
+        plt.close(fig)
+    for ds in sorted(R['dataset'].unique()):
+        save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
+    print(f"Figurer: {', '.join(made)}")
+    return R
