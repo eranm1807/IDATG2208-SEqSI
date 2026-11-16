@@ -208,6 +208,31 @@ def make_corrupted(x_uint8, name, level, seed=1234, cache_key=None):
     if key is not None:
         _CORRUPTION_CACHE[key] = out.cpu()
     return out.to(dev)
+CIFAR10C_URL = 'https://zenodo.org/records/2535967/files/CIFAR-10-C.tar?download=1'
+CIFAR10C_NAMES = ['brightness', 'contrast', 'gaussian_noise', 'gaussian_blur', 'jpeg_compression', 'fog']
+
+def download_cifar10c(root, names=CIFAR10C_NAMES, log=print):
+    out = os.path.join(root, 'CIFAR-10-C')
+    need = [n for n in list(names) + ['labels'] if not os.path.exists(os.path.join(out, n + '.npy'))]
+    if not need:
+        return out
+    os.makedirs(out, exist_ok=True)
+    log(f"Downloading CIFAR-10-C ({', '.join(need)}), this takes a few minutes ...")
+    with urllib.request.urlopen(CIFAR10C_URL) as r, tarfile.open(fileobj=r, mode='r|') as tar:
+        for m in tar:
+            base = os.path.basename(m.name)
+            if not (m.isfile() and base.endswith('.npy')):
+                continue
+            base = base[:-4]
+            if base in need:
+                f = tar.extractfile(m)
+                with open(os.path.join(out, base + '.npy'), 'wb') as g:
+                    shutil.copyfileobj(f, g)
+                need.remove(base)
+                log(f'  hentet {base}.npy')
+                if not need:
+                    break
+    return out
 
 @torch.no_grad()
 def predict_logits(model, x_uint8, transform=None, bs=1000):
