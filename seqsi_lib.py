@@ -171,6 +171,43 @@ def contrast(x, a, clip):
     m = x.mean(dim=(1, 2, 3), keepdim=True)
     y = a * (x - m) + m
     return y.clamp(0, 1) if clip else y
+CORRUPTIONS = {'gamma': [1.25, 1.5, 2.0, 2.5, 3.0], 'gaussian_noise': [0.04, 0.06, 0.08, 0.09, 0.1], 'gaussian_blur': [0.4, 0.6, 0.7, 0.8, 1.0], 'jpeg': [80, 65, 58, 50, 40]}
+_CORRUPTION_CACHE = {}
+
+def _jpeg(x_uint8, quality):
+    from torchvision.io import decode_jpeg, encode_jpeg
+    xs = x_uint8.cpu()
+    out = torch.empty_like(xs)
+    for i in range(len(xs)):
+        out[i] = decode_jpeg(encode_jpeg(xs[i], quality=int(quality)))
+    return out
+
+def make_corrupted(x_uint8, name, level, seed=1234, cache_key=None):
+    key = (cache_key, name, level) if cache_key is not None else None
+    if key is not None and key in _CORRUPTION_CACHE:
+        return _CORRUPTION_CACHE[key].to(x_uint8.device)
+    dev = x_uint8.device
+    if name == 'jpeg':
+        out = _jpeg(x_uint8, level)
+    else:
+        outs = []
+        g = torch.Generator(device=dev).manual_seed(seed)
+        for k in range(0, len(x_uint8), 1000):
+            x = to_float(x_uint8[k:k + 1000])
+            if name == 'gamma':
+                y = x.clamp(0, 1).pow(level)
+            elif name == 'gaussian_noise':
+                y = x + level * torch.randn(x.shape, generator=g, device=dev)
+            elif name == 'gaussian_blur':
+                ks = 2 * math.ceil(3 * level) + 1
+                y = TF.gaussian_blur(x, kernel_size=[ks, ks], sigma=[level, level])
+            else:
+                raise ValueError(name)
+            outs.append(to_uint8(y))
+        out = torch.cat(outs)
+    if key is not None:
+        _CORRUPTION_CACHE[key] = out.cpu()
+    return out.to(dev)
 
 @torch.no_grad()
 def predict_logits(model, x_uint8, transform=None, bs=1000):
