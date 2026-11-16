@@ -4,12 +4,14 @@ import time
 import torch
 import seqsi_lib as L
 BASE = dict(dataset='cifar10', variant='standard', seed=0, epochs=30, convs_per_stage=2, bn='none', preproc='none', aug='none')
+DATASETS = ['cifar10', 'fashionmnist']
+SEEDS5 = list(range(5))
 
 def grid(**kw):
     keys = list(kw)
     return [dict(BASE, **dict(zip(keys, vals))) for vals in itertools.product(*(kw[k] for k in keys))]
-GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0])}
-ORDER = ['E']
+GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0]), 'D_main': grid(dataset=DATASETS, variant=['standard', 'seqsi'], seed=SEEDS5)}
+ORDER = ['E', 'D_main']
 
 def run_name(cfg):
     return f"{cfg['dataset']}_{cfg['variant']}_cps{cfg['convs_per_stage']}_bn-{cfg['bn']}_pre-{cfg['preproc']}_aug-{cfg['aug']}_s{cfg['seed']}"
