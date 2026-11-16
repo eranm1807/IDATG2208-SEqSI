@@ -267,6 +267,12 @@ def evaluate_model(model, data, cifar10c_dir=None, log=print):
         rows += shift_sweep(model, xt, yt, 'brightness', B_VALUES, clip)
         rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip)
     res['affine'] = rows
+    rows = []
+    for name, levels in CORRUPTIONS.items():
+        for sev, level in enumerate(levels, start=1):
+            xc = make_corrupted(xt, name, level, cache_key=dataset)
+            rows.append(dict(corruption=name, severity=sev, level=float(level), **metrics_from_logits(predict_logits(model, xc), yt)))
+    res['corruptions'] = rows
     return res
 
 def save_json(obj, path):
