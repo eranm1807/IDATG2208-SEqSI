@@ -30,6 +30,8 @@ def _build(cfg):
 def run_one(cfg, out_dir, data_root, device):
     name = run_name(cfg)
     path = os.path.join(out_dir, 'runs', name + '.json')
+    if os.path.exists(path):
+        return 'skipped'
     data = get_data(cfg['dataset'], data_root, device)
     L.set_seed(cfg['seed'])
     model = _build(cfg)
