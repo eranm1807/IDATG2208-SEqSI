@@ -16,6 +16,16 @@ ORDER = ['E', 'D_main']
 
 def run_name(cfg):
     return f"{cfg['dataset']}_{cfg['variant']}_cps{cfg['convs_per_stage']}_bn-{cfg['bn']}_pre-{cfg['preproc']}_aug-{cfg['aug']}_s{cfg['seed']}"
+
+def unique_configs(groups):
+    order, info = ([], {})
+    for g in groups:
+        for cfg in GROUPS[g]:
+            name = run_name(cfg)
+            if name not in info:
+                order.append(name)
+                info[name] = [g, cfg]
+    return [tuple(info[n]) for n in order]
 _DATA = {}
 
 def get_data(dataset, root, device):
@@ -50,12 +60,18 @@ def run_groups(groups, out_dir='results', data_root='./data', device=None):
     if groups == ['all'] or groups == 'all':
         groups = ORDER
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
-    for g in groups:
-        for cfg in GROUPS[g]:
-            print(f'{g}: {run_name(cfg)}')
-            msg = run_one(cfg, out_dir, data_root, device)
-            print(f'   -> {msg}')
-    print('Ferdig.')
+    todo = unique_configs(groups)
+    done = [c for _, c in todo if os.path.exists(os.path.join(out_dir, 'runs', run_name(c) + '.json'))]
+    print(f'{len(todo)} runs in {groups}: {len(done)} done, {len(todo) - len(done)} left. Device: {device}')
+    t_start = time.time()
+    for i, (g, cfg) in enumerate(todo, start=1):
+        name = run_name(cfg)
+        if os.path.exists(os.path.join(out_dir, 'runs', name + '.json')):
+            continue
+        print(f'[{i}/{len(todo)}] {g}: {name}')
+        msg = run_one(cfg, out_dir, data_root, device)
+        print(f'   -> {msg}   (total {(time.time() - t_start) / 60:.0f} min)')
+    print('Done.')
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--groups', nargs='+', default=['all'], help=f"one or more of {ORDER}, or 'all'")
