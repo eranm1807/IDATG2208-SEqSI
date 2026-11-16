@@ -1,3 +1,4 @@
+import argparse
 import itertools
 import os
 import time
@@ -55,3 +56,10 @@ def run_groups(groups, out_dir='results', data_root='./data', device=None):
             msg = run_one(cfg, out_dir, data_root, device)
             print(f'   -> {msg}')
     print('Ferdig.')
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--groups', nargs='+', default=['all'], help=f"one or more of {ORDER}, or 'all'")
+    ap.add_argument('--out', default='results')
+    ap.add_argument('--data', default='./data')
+    a = ap.parse_args()
+    run_groups(a.groups, out_dir=a.out, data_root=a.data)
