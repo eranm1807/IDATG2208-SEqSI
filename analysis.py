@@ -3,13 +3,14 @@ import json
 import os
 import numpy as np
 import pandas as pd
+from scipy import stats
 import matplotlib
 if __name__ == '__main__':
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 MODELS = ['Standard', 'SEqSI']
 STYLE = {'Standard': dict(color='#D55E00', marker='o'), 'SEqSI': dict(color='#0072B2', marker='s')}
-DS_NAME = {'cifar10': 'CIFAR-10'}
+DS_NAME = {'cifar10': 'CIFAR-10', 'fashionmnist': 'Fashion-MNIST'}
 plt.rcParams.update({'font.size': 8, 'axes.titlesize': 8, 'axes.labelsize': 8, 'legend.fontsize': 7, 'xtick.labelsize': 7, 'ytick.labelsize': 7, 'axes.spines.top': False, 'axes.spines.right': False, 'axes.grid': True, 'grid.color': '#e6e6e6', 'grid.linewidth': 0.6, 'lines.linewidth': 1.5, 'lines.markersize': 4, 'savefig.bbox': 'tight', 'savefig.pad_inches': 0.02})
 FULL_W = 5.5
 
@@ -45,10 +46,22 @@ def build_frames(runs):
     cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()
     return (pd.DataFrame(R), cat(AFF))
 
+def ci95(x):
+    x = np.asarray(x, dtype=float)
+    x = x[~np.isnan(x)]
+    n = len(x)
+    if n == 0:
+        return (np.nan, np.nan)
+    if n < 2:
+        return (float(x.mean()), np.nan)
+    h = stats.t.ppf(0.975, n - 1) * x.std(ddof=1) / np.sqrt(n)
+    return (float(x.mean()), float(h))
+
 def curve(df, by, col='acc'):
     rows = []
     for v, g in df.groupby(by):
-        rows.append((v, g[col].mean(), np.nan, len(g)))
+        m, h = ci95(g[col])
+        rows.append((v, m, h, len(g)))
     return pd.DataFrame(rows, columns=[by, 'mean', 'ci', 'n']).sort_values(by)
 
 def _line(ax, c, label, ls='-', band=True, style_of=None):
