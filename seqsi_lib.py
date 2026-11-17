@@ -32,11 +32,29 @@ class ZeroSumConv2d(nn.Conv2d):
 
     def forward(self, x):
         return self._conv_forward(x, self.centred_weight(), None)
+
+class ScaleBN2d(nn.Module):
+
+    def __init__(self, c, momentum=0.1, eps=1e-05):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(c))
+        self.register_buffer('running_ms', torch.ones(c))
+        self.momentum, self.eps = (momentum, eps)
+
+    def forward(self, x):
+        if self.training:
+            ms = x.float().pow(2).mean(dim=(0, 2, 3))
+            with torch.no_grad():
+                self.running_ms.mul_(1 - self.momentum).add_(self.momentum * ms.detach())
+        else:
+            ms = self.running_ms
+        scale = self.weight / torch.sqrt(ms + self.eps)
+        return x * scale.to(x.dtype)[None, :, None, None]
 VARIANTS = {'standard': dict(bias=True, zero_sum_first=False), 'seqsi': dict(bias=False, zero_sum_first=True)}
 
 class SmallCNN(nn.Module):
 
-    def __init__(self, in_ch=3, n_classes=10, widths=(64, 128, 256), convs_per_stage=2, bias=True, zero_sum_first=False):
+    def __init__(self, in_ch=3, n_classes=10, widths=(64, 128, 256), convs_per_stage=2, bias=True, zero_sum_first=False, bn='none'):
         super().__init__()
         layers, c, first = ([], in_ch, True)
         for w in widths:
@@ -47,6 +65,10 @@ class SmallCNN(nn.Module):
                     conv = nn.Conv2d(c, w, 3, padding=1, bias=bias)
                 first = False
                 layers.append(conv)
+                if bn == 'standard':
+                    layers.append(nn.BatchNorm2d(w))
+                elif bn == 'scale':
+                    layers.append(ScaleBN2d(w))
                 layers.append(nn.ReLU(inplace=True))
                 c = w
             layers.append(nn.MaxPool2d(2))
@@ -69,8 +91,8 @@ def _init_weights(m):
         if m.bias is not None:
             nn.init.zeros_(m.bias)
 
-def build_model(variant, in_ch, n_classes=10, convs_per_stage=2):
-    net = SmallCNN(in_ch=in_ch, n_classes=n_classes, convs_per_stage=convs_per_stage, **VARIANTS[variant])
+def build_model(variant, in_ch, n_classes=10, convs_per_stage=2, bn='none'):
+    net = SmallCNN(in_ch=in_ch, n_classes=n_classes, convs_per_stage=convs_per_stage, bn=bn, **VARIANTS[variant])
     return net
 
 def count_params(model):
