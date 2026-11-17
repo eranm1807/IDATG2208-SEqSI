@@ -11,3 +11,12 @@ import run_experiments as RE, analysis as AN
 RE.run_groups(['all'], out_dir='results', data_root='./data')
 AN.make_all(run_dir='results/runs', out_dir='results')
 ```
+
+## Experiments
+
+| Group | Runs | Content |
+|---|---|---|
+| `E` | 2 | Standard vs. SEqSI on CIFAR-10, seed 0 |
+| `D_main` | 20 | Standard vs. SEqSI on CIFAR-10 and Fashion-MNIST, seeds 0–4 |
+| `D_depth` | 24 | 1 and 3 convolutions per stage, seeds 0–2 |
+| `D_bn` | 24 | Standard batch normalisation and bias-free scale normalisation, seeds 0–2 |
