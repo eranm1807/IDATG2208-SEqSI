@@ -7,12 +7,13 @@ import seqsi_lib as L
 BASE = dict(dataset='cifar10', variant='standard', seed=0, epochs=30, convs_per_stage=2, bn='none', preproc='none', aug='none')
 DATASETS = ['cifar10', 'fashionmnist']
 SEEDS5 = list(range(5))
+SEEDS3 = list(range(3))
 
 def grid(**kw):
     keys = list(kw)
     return [dict(BASE, **dict(zip(keys, vals))) for vals in itertools.product(*(kw[k] for k in keys))]
-GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0]), 'D_main': grid(dataset=DATASETS, variant=['standard', 'seqsi'], seed=SEEDS5)}
-ORDER = ['E', 'D_main']
+GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0]), 'D_main': grid(dataset=DATASETS, variant=['standard', 'seqsi'], seed=SEEDS5), 'D_depth': grid(dataset=DATASETS, variant=['standard', 'seqsi'], convs_per_stage=[1, 3], seed=SEEDS3), 'D_bn': grid(dataset=DATASETS, variant=['standard', 'seqsi'], bn=['standard', 'scale'], seed=SEEDS3)}
+ORDER = ['E', 'D_main', 'D_depth', 'D_bn']
 CIFAR10C_GROUPS = {'D_main'}
 
 def run_name(cfg):
@@ -39,7 +40,7 @@ def get_data(dataset, root, device):
 
 def _build(cfg):
     in_ch = L.DATASETS[cfg['dataset']]['in_ch']
-    return L.build_model(cfg['variant'], in_ch, convs_per_stage=cfg['convs_per_stage'])
+    return L.build_model(cfg['variant'], in_ch, convs_per_stage=cfg['convs_per_stage'], bn=cfg['bn'])
 
 def run_one(cfg, out_dir, data_root, device, cifar10c_dir=None):
     name = run_name(cfg)
