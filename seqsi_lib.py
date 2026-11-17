@@ -298,7 +298,22 @@ def evaluate_model(model, data, cifar10c_dir=None, log=print):
             xc = make_corrupted(xt, name, level, cache_key=dataset)
             rows.append(dict(corruption=name, severity=sev, level=float(level), **metrics_from_logits(predict_logits(model, xc), yt)))
     res['corruptions'] = rows
+    if cifar10c_dir is not None and dataset == 'cifar10':
+        res['cifar10c'] = evaluate_cifar10c(model, cifar10c_dir, xt.device)
     return res
+
+def evaluate_cifar10c(model, cifar10c_dir, device, t_raw=1.0, t_norm=1.0):
+    labels = torch.from_numpy(np.load(os.path.join(cifar10c_dir, 'labels.npy'))).long()
+    rows = []
+    for name in CIFAR10C_NAMES:
+        arr = np.load(os.path.join(cifar10c_dir, name + '.npy'), mmap_mode='r')
+        for sev in range(1, 6):
+            sl = slice((sev - 1) * 10000, sev * 10000)
+            xc = torch.from_numpy(np.array(arr[sl])).permute(0, 3, 1, 2)
+            xc = xc.contiguous().to(device)
+            yc = labels[sl].to(device)
+            rows.append(dict(corruption=name, severity=sev, **metrics_from_logits(predict_logits(model, xc), yc, t_raw, t_norm)))
+    return rows
 
 def save_json(obj, path):
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
