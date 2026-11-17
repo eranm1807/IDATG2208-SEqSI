@@ -106,6 +106,34 @@ def fig_affine(AFF, dataset, models):
     _legend_below(fig, axes.ravel(), ncol=len(models))
     return fig
 
+def fig_depth_bn(R, dataset):
+    d = R[(R['dataset'] == dataset) & R['model'].isin(['Standard', 'SEqSI']) & (R['bn'].eq('none') | R['cps'].eq(2))]
+    depth = d[d['bn'] == 'none']
+    bn = d[d['cps'] == 2]
+    if depth['cps'].nunique() < 2 and bn['bn'].nunique() < 2:
+        return None
+    fig, axes = plt.subplots(1, 2, figsize=(FULL_W, 2.0), sharey=True)
+    for ax, sub, col, ticks, title in [(axes[0], depth, 'cps', [1, 2, 3], 'depth (convs per stage)'), (axes[1], bn, 'bn', ['none', 'scale', 'standard'], 'batch normalisation')]:
+        for m in ['Standard', 'SEqSI']:
+            for metric, ls in [('clean_acc', '-'), ('affine_pure_worst', '--')]:
+                c = curve(sub[sub['model'] == m], col, metric)
+                if c.empty:
+                    continue
+                c = c.set_index(col).reindex(ticks).reset_index()
+                c[col] = range(len(ticks))
+                _line(ax, c, m, ls=ls)
+        ax.set_xticks(range(len(ticks)))
+        ax.set_xticklabels([str(t) for t in ticks])
+        ax.set_xlabel(title)
+    axes[0].set_ylabel('accuracy')
+    axes[0].set_ylim(0, 1)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=STYLE[m]['color'], marker=STYLE[m]['marker'], label=m) for m in ['Standard', 'SEqSI']]
+    handles += [Line2D([], [], color='black', ls='-', label='clean'), Line2D([], [], color='black', ls='--', label='worst pure affine shift')]
+    fig.legend(handles=handles, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.04))
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    return fig
+
 def table_invariance(R):
     main = R[R['family'] == 'main']
     lines = ['\\begin{table}[t]', '\\centering', '\\small', '\\caption{Numerical invariance check on 1{,}000 test images with random $a\\in[0.25,4]$ and $b\\in[-1,1]$ (float64). Relative error of $f(a\\mathbf{x}+b)$ against $a f(\\mathbf{x})$ (largest over images and seeds) and fraction of unchanged predictions.}', '\\label{tab:invariance}', '\\begin{tabular}{llcc}', '\\toprule', 'Dataset & Model & Max.\\ rel.\\ error & Unchanged predictions \\\\', '\\midrule']
@@ -139,6 +167,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         plt.close(fig)
     for ds in sorted(R['dataset'].unique()):
         save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
+        save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     tables = {'invariance': table_invariance(R)}
     for k, v in tables.items():
         if v:
