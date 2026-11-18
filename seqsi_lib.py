@@ -270,6 +270,28 @@ def predict_logits(model, x_uint8, transform=None, bs=1000):
 def accuracy(model, x, y, transform=None):
     return (predict_logits(model, x, transform).argmax(1) == y).float().mean().item()
 
+def ece(probs, labels, n_bins=15):
+    conf, pred = probs.max(1)
+    correct = (pred == labels).float()
+    edges = torch.linspace(0, 1, n_bins + 1, device=probs.device)
+    e = torch.zeros((), device=probs.device)
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (conf > lo) & (conf <= hi)
+        if m.any():
+            e += m.float().mean() * (conf[m].mean() - correct[m].mean()).abs()
+    return e.item()
+
+def reliability(probs, labels, n_bins=15):
+    conf, pred = probs.max(1)
+    correct = (pred == labels).float()
+    edges = torch.linspace(0, 1, n_bins + 1, device=probs.device)
+    rows = []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (conf > lo) & (conf <= hi)
+        cnt = int(m.sum().item())
+        rows.append(dict(lo=lo.item(), hi=hi.item(), count=cnt, acc=correct[m].mean().item() if cnt else None, conf=conf[m].mean().item() if cnt else None))
+    return rows
+
 def metrics_from_logits(z, y, t_raw=1.0, t_norm=1.0):
     p = z.softmax(1)
     return dict(acc=(z.argmax(1) == y).float().mean().item(), conf=p.max(1).values.mean().item())
