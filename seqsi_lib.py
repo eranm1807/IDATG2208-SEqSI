@@ -309,7 +309,9 @@ def fit_temperature(logits, labels, iters=100):
 
 def metrics_from_logits(z, y, t_raw=1.0, t_norm=1.0):
     p = z.softmax(1)
-    return dict(acc=(z.argmax(1) == y).float().mean().item(), conf=p.max(1).values.mean().item())
+    p_ts = (z / t_raw).softmax(1)
+    p_nl = (normalize_logits(z) / t_norm).softmax(1)
+    return dict(acc=(z.argmax(1) == y).float().mean().item(), conf=p.max(1).values.mean().item(), ece=ece(p, y), nll=F.cross_entropy(z, y).item(), conf_ts=p_ts.max(1).values.mean().item(), ece_ts=ece(p_ts, y), conf_norm=p_nl.max(1).values.mean().item(), ece_norm=ece(p_nl, y))
 
 def shift_sweep(model, x, y, kind, values, clip, t_raw=1.0, t_norm=1.0):
     fn = brightness if kind == 'brightness' else contrast
@@ -344,21 +346,25 @@ def evaluate_model(model, data, cifar10c_dir=None, log=print):
     xv, yv = (data['x_val'], data['y_val'])
     xt, yt = (data['x_test'], data['y_test'])
     res = {}
-    res['clean'] = metrics_from_logits(predict_logits(model, xt), yt)
+    zv = predict_logits(model, xv)
+    t_raw = fit_temperature(zv, yv)
+    t_norm = fit_temperature(normalize_logits(zv), yv)
+    res['temperature'] = dict(t_raw=t_raw, t_norm=t_norm)
+    res['clean'] = metrics_from_logits(predict_logits(model, xt), yt, t_raw, t_norm)
     res['invariance'] = invariance_check(model, xt)
     rows = []
     for clip in (False, True):
-        rows += shift_sweep(model, xt, yt, 'brightness', B_VALUES, clip)
-        rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip)
+        rows += shift_sweep(model, xt, yt, 'brightness', B_VALUES, clip, t_raw, t_norm)
+        rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip, t_raw, t_norm)
     res['affine'] = rows
     rows = []
     for name, levels in CORRUPTIONS.items():
         for sev, level in enumerate(levels, start=1):
             xc = make_corrupted(xt, name, level, cache_key=dataset)
-            rows.append(dict(corruption=name, severity=sev, level=float(level), **metrics_from_logits(predict_logits(model, xc), yt)))
+            rows.append(dict(corruption=name, severity=sev, level=float(level), **metrics_from_logits(predict_logits(model, xc), yt, t_raw, t_norm)))
     res['corruptions'] = rows
     if cifar10c_dir is not None and dataset == 'cifar10':
-        res['cifar10c'] = evaluate_cifar10c(model, cifar10c_dir, xt.device)
+        res['cifar10c'] = evaluate_cifar10c(model, cifar10c_dir, xt.device, t_raw, t_norm)
     return res
 
 def evaluate_cifar10c(model, cifar10c_dir, device, t_raw=1.0, t_norm=1.0):
