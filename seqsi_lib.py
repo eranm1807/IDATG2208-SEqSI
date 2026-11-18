@@ -292,6 +292,21 @@ def reliability(probs, labels, n_bins=15):
         rows.append(dict(lo=lo.item(), hi=hi.item(), count=cnt, acc=correct[m].mean().item() if cnt else None, conf=conf[m].mean().item() if cnt else None))
     return rows
 
+def normalize_logits(z):
+    return z / z.norm(dim=1, keepdim=True).clamp_min(1e-12)
+
+def fit_temperature(logits, labels, iters=100):
+    log_t = torch.zeros(1, device=logits.device, requires_grad=True)
+    opt = torch.optim.LBFGS([log_t], lr=0.1, max_iter=iters)
+
+    def closure():
+        opt.zero_grad()
+        loss = F.cross_entropy(logits / log_t.exp(), labels)
+        loss.backward()
+        return loss
+    opt.step(closure)
+    return float(log_t.exp().item())
+
 def metrics_from_logits(z, y, t_raw=1.0, t_norm=1.0):
     p = z.softmax(1)
     return dict(acc=(z.argmax(1) == y).float().mean().item(), conf=p.max(1).values.mean().item())
