@@ -180,6 +180,33 @@ def fig_calibration(AFF, dataset, models=('Standard', 'SEqSI')):
     fig.tight_layout(rect=(0, 0.1, 1, 1))
     return fig
 
+def fig_reliability(runs, dataset, models=('Standard', 'SEqSI'), settings=('clean', 'contrast_0.25_pure', 'contrast_3.0_pure')):
+    pick = [r for r in runs if r['config']['dataset'] == dataset and family_of(r['config']) == 'main' and (label_of(r['config']) in models)]
+    models = [m for m in models if any((label_of(r['config']) == m for r in pick))]
+    if not models:
+        return None
+    fig, axes = plt.subplots(len(models), len(settings), figsize=(FULL_W, 1.75 * len(models)), squeeze=False)
+    for i, m in enumerate(models):
+        rs = [r for r in pick if label_of(r['config']) == m]
+        for j, s in enumerate(settings):
+            ax = axes[i, j]
+            bins = pd.concat([pd.DataFrame(r['reliability'][s]['raw']) for r in rs])
+            bins = bins[bins['count'] > 0]
+            agg = bins.assign(wa=bins['acc'] * bins['count'], wc=bins['conf'] * bins['count']).groupby(['lo', 'hi'], as_index=False)[['wa', 'wc', 'count']].sum()
+            centre = (agg['lo'] + agg['hi']) / 2
+            acc = agg['wa'] / agg['count']
+            ax.bar(centre, acc, width=(agg['hi'] - agg['lo']) * 0.92, color=STYLE[m]['color'], alpha=0.85, label='accuracy')
+            ax.plot([0, 1], [0, 1], ls='--', color='#555555', lw=0.8)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.set_title(f"{m}: {s.replace('_', ' ')}")
+            if i == len(models) - 1:
+                ax.set_xlabel('confidence')
+            if j == 0:
+                ax.set_ylabel('accuracy')
+    fig.tight_layout()
+    return fig
+
 def fig_depth_bn(R, dataset):
     d = R[(R['dataset'] == dataset) & R['model'].isin(['Standard', 'SEqSI']) & (R['bn'].eq('none') | R['cps'].eq(2))]
     depth = d[d['bn'] == 'none']
@@ -243,6 +270,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
         save(fig_corruptions(COR, R, ds, ['Standard', 'SEqSI']), f'corruptions_{ds}')
         save(fig_calibration(AFF, ds), f'calibration_{ds}')
+        save(fig_reliability(runs, ds), f'reliability_{ds}')
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
         save(fig_cifar10c(R, ['Standard', 'SEqSI']), 'cifar10c')
