@@ -184,6 +184,7 @@ def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, se
     return hist
 B_VALUES = [-0.8, -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8]
 A_VALUES = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+SPATIAL_VALUES = [0.0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8]
 
 def brightness(x, b, clip):
     y = x + b
@@ -193,6 +194,11 @@ def contrast(x, a, clip):
     m = x.mean(dim=(1, 2, 3), keepdim=True)
     y = a * (x - m) + m
     return y.clamp(0, 1) if clip else y
+
+def spatial_gradient(x, s):
+    w = x.shape[-1]
+    ramp = torch.linspace(-1.0, 1.0, w, device=x.device, dtype=x.dtype)
+    return x + s * ramp[None, None, None, :]
 CORRUPTIONS = {'gamma': [1.25, 1.5, 2.0, 2.5, 3.0], 'gaussian_noise': [0.04, 0.06, 0.08, 0.09, 0.1], 'gaussian_blur': [0.4, 0.6, 0.7, 0.8, 1.0], 'jpeg': [80, 65, 58, 50, 40]}
 _CORRUPTION_CACHE = {}
 
@@ -340,6 +346,7 @@ def invariance_check(model, x_uint8, n=1000, seed=0, use_double=True):
     rel_inv = (f1 - f0).norm(dim=1) / f0.norm(dim=1).clamp_min(1e-30)
     agree = (f1.argmax(1) == f0.argmax(1)).float().mean().item()
     return dict(n=n, max_rel_err=rel_eq.max().item(), median_rel_err=rel_eq.median().item(), max_rel_err_inv=rel_inv.max().item(), prediction_agreement=agree)
+RELIABILITY_SETTINGS = [('clean', None), ('contrast_0.25_pure', ('contrast', 0.25, False)), ('contrast_3.0_pure', ('contrast', 3.0, False)), ('brightness_0.4_clip', ('brightness', 0.4, True))]
 
 def evaluate_model(model, data, cifar10c_dir=None, log=print):
     dataset = data['name']
@@ -357,12 +364,23 @@ def evaluate_model(model, data, cifar10c_dir=None, log=print):
         rows += shift_sweep(model, xt, yt, 'brightness', B_VALUES, clip, t_raw, t_norm)
         rows += shift_sweep(model, xt, yt, 'contrast', A_VALUES, clip, t_raw, t_norm)
     res['affine'] = rows
+    res['spatial'] = [dict(value=float(s), **metrics_from_logits(predict_logits(model, xt, lambda t, s=s: spatial_gradient(t, s)), yt, t_raw, t_norm)) for s in SPATIAL_VALUES]
     rows = []
     for name, levels in CORRUPTIONS.items():
         for sev, level in enumerate(levels, start=1):
             xc = make_corrupted(xt, name, level, cache_key=dataset)
             rows.append(dict(corruption=name, severity=sev, level=float(level), **metrics_from_logits(predict_logits(model, xc), yt, t_raw, t_norm)))
     res['corruptions'] = rows
+    rel = {}
+    for key, spec in RELIABILITY_SETTINGS:
+        if spec is None:
+            z = predict_logits(model, xt)
+        else:
+            kind, v, clip = spec
+            fn = brightness if kind == 'brightness' else contrast
+            z = predict_logits(model, xt, lambda t: fn(t, v, clip))
+        rel[key] = dict(raw=reliability(z.softmax(1), yt), norm=reliability((normalize_logits(z) / t_norm).softmax(1), yt))
+    res['reliability'] = rel
     if cifar10c_dir is not None and dataset == 'cifar10':
         res['cifar10c'] = evaluate_cifar10c(model, cifar10c_dir, xt.device, t_raw, t_norm)
     return res
