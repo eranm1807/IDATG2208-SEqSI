@@ -43,7 +43,7 @@ def build_frames(runs):
         pure, clipped = (aff[~aff['clip']], aff[aff['clip']])
         cor = pd.DataFrame(r['corruptions'])
         inv = r['invariance']
-        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min())
+        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], clean_ece=r['clean']['ece'], clean_ece_ts=r['clean']['ece_ts'], clean_ece_norm=r['clean']['ece_norm'], t_raw=r['temperature']['t_raw'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min(), pure_conf_range=pure['conf'].max() - pure['conf'].min(), pure_conf_norm_range=pure['conf_norm'].max() - pure['conf_norm'].min(), pure_ece_mean=pure['ece'].mean(), pure_ece_norm_mean=pure['ece_norm'].mean())
         for name, g in cor.groupby('corruption'):
             row[f'corr_{name}'] = g['acc'].mean()
         if 'cifar10c' in r:
@@ -158,6 +158,28 @@ def fig_cifar10c(R, models):
     ax.legend(ncol=min(4, len(models)), frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.18))
     return fig
 
+def fig_calibration(AFF, dataset, models=('Standard', 'SEqSI')):
+    d = AFF[(AFF['dataset'] == dataset) & (AFF['family'] == 'main') & (AFF['kind'] == 'contrast') & ~AFF['clip']]
+    models = _present(d, list(models))
+    fig, axes = plt.subplots(1, 3, figsize=(FULL_W, 1.9))
+    for m in models:
+        dm = d[d['model'] == m]
+        _line(axes[0], curve(dm, 'value', 'acc'), m)
+        _line(axes[1], curve(dm, 'value', 'conf'), m)
+        _line(axes[1], curve(dm, 'value', 'conf_norm'), m + ' (norm. logits)', ls='--', band=False, style_of=m)
+        _line(axes[2], curve(dm, 'value', 'ece'), m)
+        _line(axes[2], curve(dm, 'value', 'ece_norm'), m + ' (norm. logits)', ls='--', band=False, style_of=m)
+    for ax, t in zip(axes, ['accuracy', 'mean confidence', 'ECE']):
+        _contrast_axis(ax, sorted(d['value'].unique()), narrow=True)
+        ax.set_xlabel('contrast factor $a$')
+        ax.set_title(t)
+    axes[0].set_ylim(0, 1)
+    axes[1].set_ylim(0, 1.02)
+    h, l = axes[1].get_legend_handles_labels()
+    fig.legend(h, l, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.04))
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    return fig
+
 def fig_depth_bn(R, dataset):
     d = R[(R['dataset'] == dataset) & R['model'].isin(['Standard', 'SEqSI']) & (R['bn'].eq('none') | R['cps'].eq(2))]
     depth = d[d['bn'] == 'none']
@@ -220,6 +242,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
     for ds in sorted(R['dataset'].unique()):
         save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
         save(fig_corruptions(COR, R, ds, ['Standard', 'SEqSI']), f'corruptions_{ds}')
+        save(fig_calibration(AFF, ds), f'calibration_{ds}')
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
         save(fig_cifar10c(R, ['Standard', 'SEqSI']), 'cifar10c')
