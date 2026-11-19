@@ -35,15 +35,16 @@ def load_runs(run_dir):
     return runs
 
 def build_frames(runs):
-    R, AFF, COR, C10 = ([], [], [], [])
+    R, AFF, COR, SPA, C10 = ([], [], [], [], [])
     for r in runs:
         c = r['config']
         key = dict(dataset=c['dataset'], model=label_of(c), family=family_of(c), seed=c['seed'], cps=c['convs_per_stage'], bn=c['bn'])
         aff = pd.DataFrame(r['affine'])
         pure, clipped = (aff[~aff['clip']], aff[aff['clip']])
         cor = pd.DataFrame(r['corruptions'])
+        spa = pd.DataFrame(r['spatial'])
         inv = r['invariance']
-        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], clean_ece=r['clean']['ece'], clean_ece_ts=r['clean']['ece_ts'], clean_ece_norm=r['clean']['ece_norm'], t_raw=r['temperature']['t_raw'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min(), pure_conf_range=pure['conf'].max() - pure['conf'].min(), pure_conf_norm_range=pure['conf_norm'].max() - pure['conf_norm'].min(), pure_ece_mean=pure['ece'].mean(), pure_ece_norm_mean=pure['ece_norm'].mean())
+        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], clean_ece=r['clean']['ece'], clean_ece_ts=r['clean']['ece_ts'], clean_ece_norm=r['clean']['ece_norm'], t_raw=r['temperature']['t_raw'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min(), spatial_mean=spa['acc'].mean(), spatial_worst=spa['acc'].min(), pure_conf_range=pure['conf'].max() - pure['conf'].min(), pure_conf_norm_range=pure['conf_norm'].max() - pure['conf_norm'].min(), pure_ece_mean=pure['ece'].mean(), pure_ece_norm_mean=pure['ece_norm'].mean())
         for name, g in cor.groupby('corruption'):
             row[f'corr_{name}'] = g['acc'].mean()
         if 'cifar10c' in r:
@@ -55,8 +56,9 @@ def build_frames(runs):
         R.append(row)
         AFF.append(aff.assign(**key))
         COR.append(cor.assign(**key))
+        SPA.append(spa.assign(**key))
     cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()
-    return (pd.DataFrame(R), cat(AFF), cat(COR), cat(C10))
+    return (pd.DataFrame(R), cat(AFF), cat(COR), cat(SPA), cat(C10))
 
 def ci95(x):
     x = np.asarray(x, dtype=float)
@@ -207,6 +209,18 @@ def fig_reliability(runs, dataset, models=('Standard', 'SEqSI'), settings=('clea
     fig.tight_layout()
     return fig
 
+def fig_spatial(SPA, dataset, models):
+    d = SPA[(SPA['dataset'] == dataset) & (SPA['family'] == 'main')]
+    models = _present(d, models)
+    fig, ax = plt.subplots(figsize=(FULL_W / 2, 1.9))
+    for m in models:
+        _line(ax, curve(d[d['model'] == m], 'value'), m)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel('illumination ramp strength $s$')
+    ax.set_ylabel('test accuracy')
+    ax.legend(frameon=False, fontsize=6)
+    return fig
+
 def fig_depth_bn(R, dataset):
     d = R[(R['dataset'] == dataset) & R['model'].isin(['Standard', 'SEqSI']) & (R['bn'].eq('none') | R['cps'].eq(2))]
     depth = d[d['bn'] == 'none']
@@ -251,7 +265,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
     if not runs:
         print('No runs found in', run_dir)
         return None
-    R, AFF, COR, C10 = build_frames(runs)
+    R, AFF, COR, SPA, C10 = build_frames(runs)
     fig_dir, tab_dir = (os.path.join(out_dir, 'figures'), os.path.join(out_dir, 'tables'))
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(tab_dir, exist_ok=True)
@@ -271,6 +285,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         save(fig_corruptions(COR, R, ds, ['Standard', 'SEqSI']), f'corruptions_{ds}')
         save(fig_calibration(AFF, ds), f'calibration_{ds}')
         save(fig_reliability(runs, ds), f'reliability_{ds}')
+        save(fig_spatial(SPA, ds, ['Standard', 'SEqSI']), f'spatial_{ds}')
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
         save(fig_cifar10c(R, ['Standard', 'SEqSI']), 'cifar10c')
