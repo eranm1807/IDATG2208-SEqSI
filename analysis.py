@@ -285,6 +285,25 @@ def table_invariance(R):
     lines += ['\\bottomrule', '\\end{tabular}', '\\end{table}']
     return '\n'.join(lines)
 
+SUMMARY_COLS = ['clean_acc', 'affine_pure_worst', 'affine_clip_mean', 'affine_clip_worst', 'corr_mean', 'spatial_worst', 'c10c_mean', 'clean_ece', 'pure_conf_range', 'pure_conf_norm_range', 'inv_err', 'inv_agree']
+
+def summary_text(R):
+    out = [f"Runs: {len(R)} | total training time: {R['train_time_min'].sum() / 60:.2f} h"]
+    for (ds, fam), d in R.groupby(['dataset', 'family']):
+        out.append(f'\n## {ds} / {fam}')
+        for m in _present(d, MODELS + sorted(set(d['model']) - set(MODELS))):
+            dm = d[d['model'] == m]
+            parts = [f'n={len(dm)}', f"params={int(dm['params'].iloc[0]):,}"]
+            for c in SUMMARY_COLS:
+                if c in dm and (not dm[c].isna().all()):
+                    mm, h = ci95(dm[c])
+                    if c == 'inv_err':
+                        parts.append(f'{c}={dm[c].max():.1e}')
+                    else:
+                        parts.append(f'{c}={mm:.4f}' + ('' if np.isnan(h) else f'±{h:.4f}'))
+            out.append(f'- {m}: ' + ', '.join(parts))
+    return '\n'.join(out)
+
 def make_all(run_dir='results/runs', out_dir='results', show=False):
     runs = load_runs(run_dir)
     if not runs:
@@ -319,6 +338,10 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         if v:
             with open(os.path.join(tab_dir, k + '.tex'), 'w') as f:
                 f.write(v + '\n')
+    R.to_csv(os.path.join(out_dir, 'runs_summary.csv'), index=False)
+    text = summary_text(R)
+    with open(os.path.join(out_dir, 'summary.md'), 'w') as f:
+        f.write(text + '\n')
     print(f"Figures: {', '.join(made)}")
     print(f"Tables: {', '.join((k for k, v in tables.items() if v))}")
-    return R
+    return text
