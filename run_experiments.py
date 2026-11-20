@@ -42,7 +42,29 @@ def _build(cfg):
     in_ch = L.DATASETS[cfg['dataset']]['in_ch']
     return L.build_model(cfg['variant'], in_ch, convs_per_stage=cfg['convs_per_stage'], bn=cfg['bn'])
 
-def run_one(cfg, out_dir, data_root, device, cifar10c_dir=None):
+def needs_cifar10c(cfg, out_dir):
+    path = os.path.join(out_dir, 'runs', run_name(cfg) + '.json')
+    if cfg['dataset'] != 'cifar10' or not os.path.exists(path):
+        return False
+    with open(path) as f:
+        return 'cifar10c' not in L.json.load(f)
+
+def add_cifar10c(cfg, out_dir, device, cifar10c_dir):
+    name = run_name(cfg)
+    path = os.path.join(out_dir, 'runs', name + '.json')
+    ckpt = os.path.join(out_dir, 'checkpoints', name + '.pt')
+    if not os.path.exists(ckpt):
+        return 'no checkpoint, skipping CIFAR-10-C'
+    with open(path) as f:
+        res = L.json.load(f)
+    model = _build(cfg).to(device)
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+    t = res['temperature']
+    res['cifar10c'] = L.evaluate_cifar10c(model, cifar10c_dir, device, t['t_raw'], t['t_norm'])
+    L.save_json(res, path)
+    return 'added CIFAR-10-C'
+
+def run_one(cfg, out_dir, data_root, device, cifar10c_dir=None, save_ckpt=True):
     name = run_name(cfg)
     path = os.path.join(out_dir, 'runs', name + '.json')
     if os.path.exists(path):
@@ -58,9 +80,12 @@ def run_one(cfg, out_dir, data_root, device, cifar10c_dir=None):
     eval_time = time.time() - t1
     res = dict(name=name, config=cfg, params=L.count_params(model), train_time_s=train_time, eval_time_s=eval_time, history=hist, **ev)
     L.save_json(res, path)
+    if save_ckpt:
+        os.makedirs(os.path.join(out_dir, 'checkpoints'), exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(out_dir, 'checkpoints', name + '.pt'))
     return f"clean acc {ev['clean']['acc']:.4f} | inv.err {ev['invariance']['max_rel_err']:.1e} | {train_time / 60:.1f}+{eval_time / 60:.1f} min"
 
-def run_groups(groups, out_dir='results', data_root='./data', device=None, use_cifar10c=True):
+def run_groups(groups, out_dir='results', data_root='./data', device=None, use_cifar10c=True, save_ckpt=True):
     if groups == ['all'] or groups == 'all':
         groups = ORDER
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
@@ -74,9 +99,11 @@ def run_groups(groups, out_dir='results', data_root='./data', device=None, use_c
     for i, (g, cfg, wants_c10c) in enumerate(todo, start=1):
         name = run_name(cfg)
         if os.path.exists(os.path.join(out_dir, 'runs', name + '.json')):
+            if c10c is not None and wants_c10c and needs_cifar10c(cfg, out_dir):
+                print(f'[{i}/{len(todo)}] {name}: {add_cifar10c(cfg, out_dir, device, c10c)}')
             continue
         print(f'[{i}/{len(todo)}] {g}: {name}')
-        msg = run_one(cfg, out_dir, data_root, device, cifar10c_dir=c10c if wants_c10c else None)
+        msg = run_one(cfg, out_dir, data_root, device, cifar10c_dir=c10c if wants_c10c else None, save_ckpt=save_ckpt)
         print(f'   -> {msg}   (total {(time.time() - t_start) / 60:.0f} min)')
     print('Done.')
 if __name__ == '__main__':
@@ -85,5 +112,6 @@ if __name__ == '__main__':
     ap.add_argument('--out', default='results')
     ap.add_argument('--data', default='./data')
     ap.add_argument('--no-cifar10c', action='store_true')
+    ap.add_argument('--no-ckpt', action='store_true')
     a = ap.parse_args()
-    run_groups(a.groups, out_dir=a.out, data_root=a.data, use_cifar10c=not a.no_cifar10c)
+    run_groups(a.groups, out_dir=a.out, data_root=a.data, use_cifar10c=not a.no_cifar10c, save_ckpt=not a.no_ckpt)
