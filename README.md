@@ -20,3 +20,8 @@ AN.make_all(run_dir='results/runs', out_dir='results')
 | `D_main` | 20 | Standard vs. SEqSI on CIFAR-10 and Fashion-MNIST, seeds 0–4 |
 | `D_depth` | 24 | 1 and 3 convolutions per stage, seeds 0–2 |
 | `D_bn` | 24 | Standard batch normalisation and bias-free scale normalisation, seeds 0–2 |
+
+## Reproducibility
+
+- Fixed seeds (`seed` in each configuration), deterministic cuDNN and a fixed validation split of 5,000 training images (`split_seed=0`). The test set is used only for the final evaluation.
+- CIFAR-10 and Fashion-MNIST are downloaded automatically via torchvision, and the required CIFAR-10-C files from Zenodo (record 2535967).
