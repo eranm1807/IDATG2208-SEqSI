@@ -249,6 +249,31 @@ def fig_depth_bn(R, dataset):
     fig.tight_layout(rect=(0, 0.1, 1, 1))
     return fig
 
+def _pm(x, pct=True, digits=1):
+    m, h = ci95(x)
+    if np.isnan(m):
+        return '--'
+    f = 100 if pct else 1
+    if np.isnan(h):
+        return f'{m * f:.{digits}f}'
+    return f'{m * f:.{digits}f}$\\pm${h * f:.{digits}f}'
+MAIN_COLS = [('clean_acc', 'Clean'), ('affine_pure_worst', 'Pure aff.\\ (worst)'), ('affine_clip_mean', 'Clipped (mean)'), ('affine_clip_worst', 'Clipped (worst)'), ('corr_mean', 'Corrupt.\\ (mean)'), ('spatial_worst', 'Spatial (worst)'), ('clean_ece', 'ECE')]
+
+def table_main(R):
+    main = R[R['family'] == 'main']
+    lines = ['\\begin{table}[t]', '\\centering', '\\small', '\\setlength{\\tabcolsep}{3.5pt}', '\\caption{Test accuracy and calibration (\\%, mean $\\pm$ 95\\,\\% CI over seeds). \\emph{Pure aff.}: worst case over all unclipped brightness and contrast shifts; \\emph{Clipped}: the same shifts clipped to $[0,1]$; \\emph{Corrupt.}: mean over gamma, noise, blur and JPEG at severities 1--5; \\emph{Spatial}: worst case over the illumination ramp.}', '\\label{tab:main}', '\\begin{tabular}{l' + 'c' * len(MAIN_COLS) + '}', '\\toprule', 'Model & ' + ' & '.join((n for _, n in MAIN_COLS)) + ' \\\\', '\\midrule']
+    for ds in ['cifar10', 'fashionmnist']:
+        d = main[main['dataset'] == ds]
+        if d.empty:
+            continue
+        lines.append(f'\\multicolumn{{{len(MAIN_COLS) + 1}}}{{l}}{{\\textit{{{DS_NAME[ds]}}}}} \\\\')
+        for m in _present(d, MODELS):
+            dm = d[d['model'] == m]
+            cells = [_pm(dm[c]) for c, _ in MAIN_COLS]
+            lines.append(f'{m} & ' + ' & '.join(cells) + ' \\\\')
+    lines += ['\\bottomrule', '\\end{tabular}', '\\end{table}']
+    return '\n'.join(lines)
+
 def table_invariance(R):
     main = R[R['family'] == 'main']
     lines = ['\\begin{table}[t]', '\\centering', '\\small', '\\caption{Numerical invariance check on 1{,}000 test images with random $a\\in[0.25,4]$ and $b\\in[-1,1]$ (float64). Relative error of $f(a\\mathbf{x}+b)$ against $a f(\\mathbf{x})$ (largest over images and seeds) and fraction of unchanged predictions.}', '\\label{tab:invariance}', '\\begin{tabular}{llcc}', '\\toprule', 'Dataset & Model & Max.\\ rel.\\ error & Unchanged predictions \\\\', '\\midrule']
@@ -289,7 +314,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
         save(fig_cifar10c(R, ['Standard', 'SEqSI']), 'cifar10c')
-    tables = {'invariance': table_invariance(R)}
+    tables = {'main': table_main(R), 'invariance': table_invariance(R)}
     for k, v in tables.items():
         if v:
             with open(os.path.join(tab_dir, k + '.tex'), 'w') as f:
