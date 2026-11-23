@@ -12,9 +12,9 @@ SEEDS3 = list(range(3))
 def grid(**kw):
     keys = list(kw)
     return [dict(BASE, **dict(zip(keys, vals))) for vals in itertools.product(*(kw[k] for k in keys))]
-GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0]), 'D_main': grid(dataset=DATASETS, variant=['standard', 'seqsi'], seed=SEEDS5), 'D_depth': grid(dataset=DATASETS, variant=['standard', 'seqsi'], convs_per_stage=[1, 3], seed=SEEDS3), 'D_bn': grid(dataset=DATASETS, variant=['standard', 'seqsi'], bn=['standard', 'scale'], seed=SEEDS3)}
-ORDER = ['E', 'D_main', 'D_depth', 'D_bn']
-CIFAR10C_GROUPS = {'D_main'}
+GROUPS = {'E': grid(dataset=['cifar10'], variant=['standard', 'seqsi'], seed=[0]), 'D_main': grid(dataset=DATASETS, variant=['standard', 'seqsi'], seed=SEEDS5), 'D_depth': grid(dataset=DATASETS, variant=['standard', 'seqsi'], convs_per_stage=[1, 3], seed=SEEDS3), 'D_bn': grid(dataset=DATASETS, variant=['standard', 'seqsi'], bn=['standard', 'scale'], seed=SEEDS3), 'B': grid(dataset=DATASETS, variant=['standard'], aug=['photometric'], seed=SEEDS5) + grid(dataset=DATASETS, variant=['standard'], preproc=['standardize'], seed=SEEDS5)}
+ORDER = ['E', 'D_main', 'D_depth', 'D_bn', 'B']
+CIFAR10C_GROUPS = {'D_main', 'B'}
 
 def run_name(cfg):
     return f"{cfg['dataset']}_{cfg['variant']}_cps{cfg['convs_per_stage']}_bn-{cfg['bn']}_pre-{cfg['preproc']}_aug-{cfg['aug']}_s{cfg['seed']}"
@@ -40,7 +40,7 @@ def get_data(dataset, root, device):
 
 def _build(cfg):
     in_ch = L.DATASETS[cfg['dataset']]['in_ch']
-    return L.build_model(cfg['variant'], in_ch, convs_per_stage=cfg['convs_per_stage'], bn=cfg['bn'])
+    return L.build_model(cfg['variant'], in_ch, convs_per_stage=cfg['convs_per_stage'], bn=cfg['bn'], preproc=cfg['preproc'])
 
 def needs_cifar10c(cfg, out_dir):
     path = os.path.join(out_dir, 'runs', run_name(cfg) + '.json')
@@ -72,8 +72,9 @@ def run_one(cfg, out_dir, data_root, device, cifar10c_dir=None, save_ckpt=True):
     data = get_data(cfg['dataset'], data_root, device)
     L.set_seed(cfg['seed'])
     model = _build(cfg)
+    aug = L.photometric_augment if cfg['aug'] == 'photometric' else None
     t0 = time.time()
-    hist = L.train_model(model, data, cfg['dataset'], epochs=cfg['epochs'], seed=cfg['seed'], device=device)
+    hist = L.train_model(model, data, cfg['dataset'], epochs=cfg['epochs'], seed=cfg['seed'], device=device, augment_fn=aug)
     train_time = time.time() - t0
     t1 = time.time()
     ev = L.evaluate_model(model, data, cifar10c_dir=cifar10c_dir)
