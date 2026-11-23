@@ -50,6 +50,17 @@ class ScaleBN2d(nn.Module):
             ms = self.running_ms
         scale = self.weight / torch.sqrt(ms + self.eps)
         return x * scale.to(x.dtype)[None, :, None, None]
+
+class PerImageStandardize(nn.Module):
+
+    def __init__(self, net, eps=1e-05):
+        super().__init__()
+        self.net, self.eps = (net, eps)
+
+    def forward(self, x):
+        m = x.mean(dim=(1, 2, 3), keepdim=True)
+        s = x.std(dim=(1, 2, 3), keepdim=True)
+        return self.net((x - m) / (s + self.eps))
 VARIANTS = {'standard': dict(bias=True, zero_sum_first=False), 'seqsi': dict(bias=False, zero_sum_first=True)}
 
 class SmallCNN(nn.Module):
@@ -91,8 +102,10 @@ def _init_weights(m):
         if m.bias is not None:
             nn.init.zeros_(m.bias)
 
-def build_model(variant, in_ch, n_classes=10, convs_per_stage=2, bn='none'):
+def build_model(variant, in_ch, n_classes=10, convs_per_stage=2, bn='none', preproc='none'):
     net = SmallCNN(in_ch=in_ch, n_classes=n_classes, convs_per_stage=convs_per_stage, bn=bn, **VARIANTS[variant])
+    if preproc == 'standardize':
+        net = PerImageStandardize(net)
     return net
 
 def count_params(model):
