@@ -8,8 +8,8 @@ import matplotlib
 if __name__ == '__main__':
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-MODELS = ['Standard', 'SEqSI']
-STYLE = {'Standard': dict(color='#D55E00', marker='o'), 'SEqSI': dict(color='#0072B2', marker='s')}
+MODELS = ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']
+STYLE = {'Standard': dict(color='#D55E00', marker='o'), 'SEqSI': dict(color='#0072B2', marker='s'), 'Standard + aug.': dict(color='#E69F00', marker='^'), 'Standard + std.': dict(color='#009E73', marker='D')}
 DS_NAME = {'cifar10': 'CIFAR-10', 'fashionmnist': 'Fashion-MNIST'}
 C10C_SHORT = {'gaussian_blur': 'blur', 'gaussian_noise': 'noise', 'jpeg_compression': 'JPEG'}
 CORR_NAME = {'gamma': 'Gamma', 'gaussian_noise': 'Gaussian noise', 'gaussian_blur': 'Gaussian blur', 'jpeg': 'JPEG'}
@@ -18,6 +18,10 @@ FULL_W = 5.5
 
 def label_of(cfg):
     base = {'standard': 'Standard', 'seqsi': 'SEqSI'}[cfg['variant']]
+    if cfg.get('preproc') == 'standardize':
+        base += ' + std.'
+    if cfg.get('aug') == 'photometric':
+        base += ' + aug.'
     return base
 
 def family_of(cfg):
