@@ -140,8 +140,18 @@ def gpu_augment(x, pad=4, flip=True):
         m = torch.rand(n, device=dev) < 0.5
         out = torch.where(m[:, None, None, None], out.flip(3), out)
     return out
+AUG_B_MAX = 0.4
+AUG_A_RANGE = (0.5, 2.0)
 
-def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, seed=0, device='cuda', amp=True, log=print):
+def photometric_augment(x, b_max=AUG_B_MAX, a_range=AUG_A_RANGE):
+    n, dev = (x.shape[0], x.device)
+    lo, hi = (math.log(a_range[0]), math.log(a_range[1]))
+    a = torch.exp(torch.empty(n, device=dev).uniform_(lo, hi))[:, None, None, None]
+    b = torch.empty(n, device=dev).uniform_(-b_max, b_max)[:, None, None, None]
+    m = x.mean(dim=(1, 2, 3), keepdim=True)
+    return (a * (x - m) + m + b).clamp(0, 1)
+
+def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, seed=0, device='cuda', amp=True, augment_fn=None, log=print):
     set_seed(seed)
     cfg = DATASETS[dataset]
     model.to(device)
@@ -164,6 +174,8 @@ def train_model(model, data, dataset, epochs=30, bs=128, lr=0.002, wd=0.0005, se
             x = to_float(data['x_train'][idx])
             y = data['y_train'][idx]
             x = gpu_augment(x, pad=cfg['pad'], flip=cfg['flip'])
+            if augment_fn is not None:
+                x = augment_fn(x)
             with torch.autocast('cuda', dtype=torch.float16, enabled=use_amp):
                 out = model(x)
                 loss = F.cross_entropy(out, y)
