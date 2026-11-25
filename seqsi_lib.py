@@ -429,3 +429,8 @@ def save_json(obj, path):
     with open(tmp, 'w') as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+
+def gpu_info():
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_name(0)
+    return 'cpu'
