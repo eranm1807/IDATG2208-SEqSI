@@ -330,13 +330,15 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         plt.close(fig)
     for ds in sorted(R['dataset'].unique()):
         save(fig_affine(AFF, ds, ['Standard', 'SEqSI']), f'affine_{ds}')
-        save(fig_corruptions(COR, R, ds, ['Standard', 'SEqSI']), f'corruptions_{ds}')
+        if len(_present(AFF[AFF['dataset'] == ds], MODELS)) > 2:
+            save(fig_affine(AFF, ds, ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']), f'affine_all_{ds}')
+        save(fig_corruptions(COR, R, ds, ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']), f'corruptions_{ds}')
         save(fig_calibration(AFF, ds), f'calibration_{ds}')
         save(fig_reliability(runs, ds), f'reliability_{ds}')
-        save(fig_spatial(SPA, ds, ['Standard', 'SEqSI']), f'spatial_{ds}')
+        save(fig_spatial(SPA, ds, ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']), f'spatial_{ds}')
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
-        save(fig_cifar10c(R, ['Standard', 'SEqSI']), 'cifar10c')
+        save(fig_cifar10c(R, ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']), 'cifar10c')
     tables = {'main': table_main(R), 'invariance': table_invariance(R)}
     for k, v in tables.items():
         if v:
