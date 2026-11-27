@@ -20,6 +20,7 @@ AN.make_all(run_dir='results/runs', out_dir='results')
 | `D_main` | 20 | Standard vs. SEqSI on CIFAR-10 and Fashion-MNIST, seeds 0–4 |
 | `D_depth` | 24 | 1 and 3 convolutions per stage, seeds 0–2 |
 | `D_bn` | 24 | Standard batch normalisation and bias-free scale normalisation, seeds 0–2 |
+| `B` | 20 | Standard CNN with photometric augmentation, and with per-image standardisation, seeds 0–4 |
 
 ## Reproducibility
 
