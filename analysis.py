@@ -48,7 +48,7 @@ def build_frames(runs):
         cor = pd.DataFrame(r['corruptions'])
         spa = pd.DataFrame(r['spatial'])
         inv = r['invariance']
-        row = dict(**key, params=r['params'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], clean_ece=r['clean']['ece'], clean_ece_ts=r['clean']['ece_ts'], clean_ece_norm=r['clean']['ece_norm'], t_raw=r['temperature']['t_raw'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min(), spatial_mean=spa['acc'].mean(), spatial_worst=spa['acc'].min(), pure_conf_range=pure['conf'].max() - pure['conf'].min(), pure_conf_norm_range=pure['conf_norm'].max() - pure['conf_norm'].min(), pure_ece_mean=pure['ece'].mean(), pure_ece_norm_mean=pure['ece_norm'].mean())
+        row = dict(**key, params=r['params'], gpu=r['gpu'], train_time_min=r['train_time_s'] / 60, eval_time_min=r.get('eval_time_s', 0) / 60, clean_acc=r['clean']['acc'], clean_ece=r['clean']['ece'], clean_ece_ts=r['clean']['ece_ts'], clean_ece_norm=r['clean']['ece_norm'], t_raw=r['temperature']['t_raw'], inv_err=inv['max_rel_err'], inv_err_inv=inv.get('max_rel_err_inv', np.nan), inv_agree=inv['prediction_agreement'], affine_pure_mean=pure['acc'].mean(), affine_pure_worst=pure['acc'].min(), affine_clip_mean=clipped['acc'].mean(), affine_clip_worst=clipped['acc'].min(), corr_mean=cor['acc'].mean(), corr_worst=cor['acc'].min(), spatial_mean=spa['acc'].mean(), spatial_worst=spa['acc'].min(), pure_conf_range=pure['conf'].max() - pure['conf'].min(), pure_conf_norm_range=pure['conf_norm'].max() - pure['conf_norm'].min(), pure_ece_mean=pure['ece'].mean(), pure_ece_norm_mean=pure['ece_norm'].mean())
         for name, g in cor.groupby('corruption'):
             row[f'corr_{name}'] = g['acc'].mean()
         if 'cifar10c' in r:
@@ -289,10 +289,18 @@ def table_invariance(R):
     lines += ['\\bottomrule', '\\end{tabular}', '\\end{table}']
     return '\n'.join(lines)
 
+def table_compute(R):
+    g = R.groupby(['dataset', 'family']).agg(runs=('seed', 'size'), train_h=('train_time_min', lambda x: x.sum() / 60), eval_h=('eval_time_min', lambda x: x.sum() / 60))
+    gpu = ', '.join(sorted(set(R['gpu'])))
+    lines = ['\\begin{table}[h]', '\\centering', '\\small', f'\\caption{{Compute used for all experiments (GPU: {gpu}).}}', '\\label{tab:compute}', '\\begin{tabular}{llrrr}', '\\toprule', 'Dataset & Experiment group & Runs & Training (h) & Evaluation (h) \\\\', '\\midrule']
+    for (ds, fam), r in g.iterrows():
+        lines.append(f"{DS_NAME[ds]} & {fam} & {int(r['runs'])} & {r['train_h']:.2f} & {r['eval_h']:.2f} \\\\")
+    lines += ['\\midrule', f"Total & & {int(g['runs'].sum())} & {g['train_h'].sum():.2f} & {g['eval_h'].sum():.2f} \\\\", '\\bottomrule', '\\end{tabular}', '\\end{table}']
+    return '\n'.join(lines)
 SUMMARY_COLS = ['clean_acc', 'affine_pure_worst', 'affine_clip_mean', 'affine_clip_worst', 'corr_mean', 'spatial_worst', 'c10c_mean', 'clean_ece', 'pure_conf_range', 'pure_conf_norm_range', 'inv_err', 'inv_agree']
 
 def summary_text(R):
-    out = [f"Runs: {len(R)} | total training time: {R['train_time_min'].sum() / 60:.2f} h"]
+    out = [f"Runs: {len(R)} | GPU: {', '.join(sorted(set(R['gpu'])))} | total training time: {R['train_time_min'].sum() / 60:.2f} h"]
     for (ds, fam), d in R.groupby(['dataset', 'family']):
         out.append(f'\n## {ds} / {fam}')
         for m in _present(d, MODELS + sorted(set(d['model']) - set(MODELS))):
@@ -339,7 +347,7 @@ def make_all(run_dir='results/runs', out_dir='results', show=False):
         save(fig_depth_bn(R, ds), f'depth_bn_{ds}')
     if 'c10c_mean' in R:
         save(fig_cifar10c(R, ['Standard', 'SEqSI', 'Standard + aug.', 'Standard + std.']), 'cifar10c')
-    tables = {'main': table_main(R), 'invariance': table_invariance(R)}
+    tables = {'main': table_main(R), 'invariance': table_invariance(R), 'compute': table_compute(R)}
     for k, v in tables.items():
         if v:
             with open(os.path.join(tab_dir, k + '.tex'), 'w') as f:
